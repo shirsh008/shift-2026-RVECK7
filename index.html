@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoltRide - Varanasi Micro-Mobility Rebalancing & Graph Network</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        @keyframes custom-ping {
+            75%, 100% { transform: scale(1.9); opacity: 0; }
+        }
+        @keyframes pulse-halo {
+            0%, 100% { transform: scale(1); opacity: 0.9; }
+            50% { transform: scale(1.3); opacity: 0.3; }
+        }
+        .animate-custom-ping { animation: custom-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite; }
+        .animate-halo { animation: pulse-halo 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes active-station-pulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.8), 0 0 20px rgba(6, 182, 212, 0.6); }
+            50% { transform: scale(1.12); box-shadow: 0 0 0 14px rgba(6, 182, 212, 0), 0 0 35px rgba(6, 182, 212, 0.9); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0), 0 0 20px rgba(6, 182, 212, 0.6); }
+        }
+        .active-station-pulse { animation: active-station-pulse 1.8s ease-in-out infinite; }
+        .station-faded { opacity: 0.22 !important; transition: opacity 0.4s ease, transform 0.4s ease; }
+        .station-highlight { opacity: 1.0 !important; z-index: 1000 !important; }
+        .notch { width: 140px; height: 26px; background-color: #0f172a; border-bottom-left-radius: 18px; border-bottom-right-radius: 18px; position: absolute; left: 50%; transform: translateX(-50%); top: 0; z-index: 50; }
+        .app-scrollbar::-webkit-scrollbar { width: 5px; }
+        .app-scrollbar::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
+        .leaflet-container { background: #0b0f19 !important; }
+        .glass-panel { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    </style>
+</head>
+<body class="flex h-screen bg-slate-950 text-slate-100 overflow-hidden select-none">
+
+    <!-- LEFT SIDE: OPERATOR COMMAND CENTER & GRAPH MAP (65%) -->
+    <div class="w-[65%] flex flex-col relative h-full border-r border-slate-800">
+        <!-- Top Header & Metrics Strip -->
+        <div class="bg-slate-900/90 border-b border-slate-800 px-6 py-3.5 z-20 shadow-xl flex flex-col space-y-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h1 class="text-base font-extrabold tracking-tight text-white">VoltRide Varanasi Engine</h1>
+                            <span class="bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-bold px-2 py-0.5 rounded-full">Varanasi, UP (Case Study)</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Directional A* Dynamic Rebalancing & Road Network Topology</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <button id="reset-state-btn" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center space-x-1.5">
+                        <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        <span>Reset Pilot</span>
+                    </button>
+                    <button id="run-simulation-btn" class="text-xs bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-bold px-4 py-2 rounded-lg shadow-lg shadow-indigo-600/30 border border-indigo-400/30 transition flex items-center space-x-2">
+                        <span>▶ Peak-Hour Commute Simulation (4hr)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- KPI Cards Grid -->
+            <div class="grid grid-cols-4 gap-3 pt-1">
+                <div class="bg-slate-950/80 rounded-xl px-4 py-2.5 flex flex-col border border-slate-800/80 shadow-inner">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Network Health</span>
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400"></span>
+                    </div>
+                    <span id="metric-health" class="text-lg font-bold text-emerald-400 mt-0.5">--%</span>
+                </div>
+                <div class="bg-slate-950/80 rounded-xl px-4 py-2.5 flex flex-col border border-slate-800/80 shadow-inner">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Active Locks (L<sub>i</sub>)</span>
+                        <span class="w-2 h-2 rounded-full bg-amber-400 shadow-sm shadow-amber-400"></span>
+                    </div>
+                    <span id="metric-locks" class="text-lg font-bold text-amber-400 mt-0.5">0</span>
+                </div>
+                <div class="bg-slate-950/80 rounded-xl px-4 py-2.5 flex flex-col border border-slate-800/80 shadow-inner">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Incentive Deployed</span>
+                        <span class="w-2 h-2 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400"></span>
+                    </div>
+                    <span id="metric-capital" class="text-lg font-bold text-cyan-400 mt-0.5">$0.00</span>
+                </div>
+                <div class="bg-slate-950/80 rounded-xl px-4 py-2.5 flex flex-col border border-slate-800/80 shadow-inner">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Vans Displaced</span>
+                        <span class="w-2 h-2 rounded-full bg-indigo-400 shadow-sm shadow-indigo-400"></span>
+                    </div>
+                    <span id="metric-vans" class="text-lg font-bold text-indigo-400 mt-0.5">0 trips</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Operator Map Container -->
+        <div class="flex-grow relative z-10">
+            <div id="operator-map" class="absolute inset-0"></div>
+
+            <!-- Graph Legend / Key Sector Badge Overlay -->
+            <div class="absolute top-4 left-4 glass-panel border border-slate-700/80 rounded-xl p-3 shadow-2xl z-[1000] text-xs space-y-2 max-w-xs pointer-events-auto">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                    <span class="font-bold text-slate-200 uppercase tracking-wider text-[10px]">Varanasi Graph Topology</span>
+                    <span class="text-[10px] text-cyan-400 font-mono">25.3176° N, 82.9739° E</span>
+                </div>
+                <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                    <div class="flex items-center space-x-1.5">
+                        <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 border border-slate-900 shadow"></span>
+                        <span class="text-slate-300">O<sub>alert</sub> (Origin)</span>
+                    </div>
+                    <div class="flex items-center space-x-1.5">
+                        <span class="w-2.5 h-2.5 rounded-full bg-rose-500 border border-slate-900 shadow"></span>
+                        <span class="text-slate-300">D<sub>dest</sub> (Destination)</span>
+                    </div>
+                    <div class="flex items-center space-x-1.5">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-emerald-400/40"></span>
+                        <span class="text-emerald-300 font-medium">In-Catchment (100%)</span>
+                    </div>
+                    <div class="flex items-center space-x-1.5">
+                        <span class="w-2 h-2 rounded-full bg-slate-600 opacity-30"></span>
+                        <span class="text-slate-400">Out-Catchment (20%)</span>
+                    </div>
+                </div>
+                <div class="mt-2 pt-1.5 border-t border-slate-800 text-[10px] text-cyan-300 font-medium flex items-center space-x-1.5">
+                    <span>✋</span>
+                    <span>Drag <strong>O<sub>alert</sub></strong> or <strong>D<sub>dest</sub></strong> to recalculate route!</span>
+                </div>
+            </div>
+
+            <!-- Floating Layer Controls -->
+            <div class="absolute bottom-6 right-6 glass-panel border border-slate-700/80 p-4 rounded-xl shadow-2xl z-[1000]">
+                <h3 class="font-bold text-slate-200 mb-3 text-xs tracking-wider uppercase flex items-center space-x-1.5">
+                    <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+                    <span>Layer Controls</span>
+                </h3>
+                <div class="space-y-2 text-xs">
+                    <label class="flex items-center space-x-2.5 cursor-pointer">
+                        <input type="checkbox" id="layer-graph" checked class="form-checkbox h-3.5 w-3.5 text-cyan-500 rounded bg-slate-900 border-slate-700">
+                        <span class="font-medium text-slate-300">Street Network Graph (Nodes & Edges)</span>
+                    </label>
+                    <label class="flex items-center space-x-2.5 cursor-pointer">
+                        <input type="checkbox" id="layer-catchment" checked class="form-checkbox h-3.5 w-3.5 text-blue-500 rounded bg-slate-900 border-slate-700">
+                        <span class="font-medium text-slate-300">10-Min Catchment Area (S<sub>catchment</sub>)</span>
+                    </label>
+                    <label class="flex items-center space-x-2.5 cursor-pointer">
+                        <input type="checkbox" id="layer-paths" checked class="form-checkbox h-3.5 w-3.5 text-indigo-500 rounded bg-slate-900 border-slate-700">
+                        <span class="font-medium text-slate-300">Active Trajectory & Detour Paths</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Quick Action Floating Buttons -->
+            <div class="absolute top-4 right-4 z-[1000] flex flex-col space-y-2" id="sim-trigger-wrapper">
+                <button id="global-simulate-event" class="glass-panel border border-indigo-500/50 hover:border-indigo-400 text-indigo-300 hover:text-white font-bold py-2 px-3.5 rounded-lg shadow-lg hover:bg-indigo-600/30 transition flex items-center space-x-2 text-xs">
+                    <span class="text-amber-400">⚡</span>
+                    <span>Simulate Mid-Route Congestion/Event</span>
+                </button>
+            </div>
+
+            <!-- Time Controller Bar for Simulation Playback -->
+            <div id="sim-controller" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 glass-panel border border-slate-700/90 p-4 rounded-2xl shadow-2xl z-[1000] w-11/12 max-w-2xl flex flex-col hidden transition-opacity duration-500">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center space-x-3">
+                        <button id="sim-play-btn" class="bg-cyan-600 hover:bg-cyan-500 text-white rounded-full p-2.5 shadow-lg shadow-cyan-600/30 focus:outline-none transition">
+                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"></path></svg>
+                        </button>
+                        <select id="sim-speed" class="bg-slate-900 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none font-medium">
+                            <option value="10">10x Speed</option>
+                            <option value="30" selected>30x Speed</option>
+                            <option value="60">60x Speed</option>
+                        </select>
+                    </div>
+                    <div class="text-white text-xs font-bold flex items-center space-x-2">
+                        <span class="relative flex h-2.5 w-2.5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span></span>
+                        <span id="sim-status-badge">Simulating Varanasi Morning Peak Commute...</span>
+                    </div>
+                    <div class="text-cyan-400 font-mono font-bold text-sm tracking-wider" id="sim-clock">07:00 AM (0h)</div>
+                </div>
+                <input type="range" id="sim-scrubber" min="0" max="239" value="0" class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500">
+            </div>
+
+            <!-- Van Dispatch Alert Banner -->
+            <div id="van-alert" class="absolute top-6 left-1/2 transform -translate-x-1/2 bg-rose-600/95 text-white font-bold py-2 px-6 rounded-full shadow-2xl z-[1500] border-2 border-rose-400 hidden backdrop-blur text-xs">
+                ⚠️ Rebalancing Van Dispatched to Godowlia Hub ($35 OPEX)
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT SIDE: RIDER MOBILE SIMULATOR (35%) -->
+    <div class="w-[35%] h-full bg-slate-900 flex flex-col justify-center items-center relative overflow-hidden">
+        <!-- Background decorative ambient blur -->
+        <div class="absolute -top-20 -right-20 w-72 h-72 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute -bottom-20 -left-20 w-72 h-72 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <!-- Smartphone Mockup Frame -->
+        <div class="relative w-[360px] h-[740px] bg-slate-950 rounded-[2.5rem] border-[10px] border-slate-800 shadow-2xl shadow-cyan-950/40 flex flex-col overflow-hidden ring-1 ring-slate-700/50">
+            <!-- Notch -->
+            <div class="notch"></div>
+            
+            <!-- App Header -->
+            <div id="app-header" class="bg-indigo-600 pt-9 pb-3 px-5 flex justify-between items-center text-white transition-colors duration-500">
+                <div class="flex items-center space-x-2">
+                    <span class="font-extrabold tracking-tight text-sm">VoltRide</span>
+                    <span class="text-[9px] bg-white/20 text-white px-1.5 py-0.5 rounded font-bold uppercase">Varanasi</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span id="battery-text" class="text-xs font-bold font-mono">80%</span>
+                    <div id="battery-icon" class="w-6 h-3 border border-white rounded-[2px] relative flex items-center p-[1px]">
+                        <div class="absolute -right-[3px] top-1/2 transform -translate-y-1/2 w-[2px] h-[4px] bg-white rounded-r-sm"></div>
+                        <div id="battery-fill" class="h-full bg-white transition-all duration-500" style="width: 80%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dynamic Alert Banner -->
+            <div id="alert-banner" class="hidden bg-rose-600 text-white text-[10px] font-bold text-center py-1.5 uppercase tracking-wider animate-pulse">
+                Battery Low: 10-Min Catchment Activated (d<sub>max</sub> = 2.5 km)
+            </div>
+
+            <!-- Scrollable App Body -->
+            <div class="flex-grow bg-slate-900 p-4 overflow-y-auto app-scrollbar flex flex-col space-y-3.5">
+                
+                <!-- Trip Summary Header Card -->
+                <div class="bg-slate-950/90 p-3.5 rounded-xl border border-slate-800 shadow text-xs space-y-2">
+                    <div class="flex items-center justify-between text-slate-400 font-semibold text-[10px] uppercase">
+                        <span>Active Commute Route</span>
+                        <span class="text-cyan-400 font-bold">Speed: 15 km/h</span>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex items-start space-x-2.5">
+                            <span class="w-2 h-2 rounded-full bg-cyan-400 mt-1 flex-shrink-0 shadow-sm shadow-cyan-400"></span>
+                            <div>
+                                <p class="text-[10px] text-slate-500 uppercase font-bold">Alert Origin (O<sub>alert</sub>)</p>
+                                <p id="rider-origin-text" class="text-slate-200 font-semibold text-xs">Near Assi Ghat, Varanasi</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start space-x-2.5">
+                            <span class="w-2 h-2 rounded-full bg-rose-500 mt-1 flex-shrink-0 shadow-sm shadow-rose-500"></span>
+                            <div>
+                                <p class="text-[10px] text-slate-500 uppercase font-bold">Destination (D<sub>dest</sub>)</p>
+                                <p id="rider-dest-text" class="text-slate-200 font-semibold text-xs">Varanasi Cantt Station (Junction)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Initial Trip Prompt Card -->
+                <div id="trip-prompt-card" class="bg-slate-950/90 p-4 rounded-xl border border-slate-800 text-center space-y-3 shadow">
+                    <div class="w-11 h-11 bg-indigo-500/10 border border-indigo-500/30 rounded-full flex items-center justify-center mx-auto text-indigo-400">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-100 text-sm mb-1">Morning Peak Ride in Progress</h3>
+                        <p class="text-xs text-slate-400 leading-relaxed">Simulate a sudden low-battery event to test directional A* rerouting to Varanasi swapping stations.</p>
+                    </div>
+                    <button id="mobile-request-route" class="w-full bg-gradient-to-r from-indigo-600 to-cyan-600 text-white font-bold py-2.5 rounded-lg shadow-md hover:from-indigo-500 hover:to-cyan-500 transition text-xs">
+                        Trigger Low Battery (15%) & Compute Route
+                    </button>
+                </div>
+
+                <!-- Recommended Route Card -->
+                <div id="route-card" class="hidden bg-slate-950/90 rounded-xl border border-cyan-500/40 overflow-hidden shadow-xl">
+                    <div class="bg-gradient-to-r from-cyan-950/80 to-slate-950 px-3.5 py-2.5 border-b border-cyan-500/30 flex justify-between items-center">
+                        <span class="text-[10px] font-extrabold text-cyan-400 uppercase tracking-wider">A* Recommended Swap</span>
+                        <span id="route-incentive" class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full font-mono"></span>
+                    </div>
+                    <div class="p-3.5 space-y-3">
+                        <div>
+                            <div class="flex items-center space-x-1.5">
+                                <span class="text-amber-400 text-xs">⭐</span>
+                                <h4 id="route-station-name" class="font-bold text-slate-100 text-sm">Station S<sub>i</sub></h4>
+                            </div>
+                            <p id="route-station-sector" class="text-[11px] text-slate-400">Varanasi Hub</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
+                            <div>
+                                <span class="text-[10px] text-slate-500 uppercase block font-semibold">Detour Distance</span>
+                                <span id="route-detour" class="font-mono text-cyan-300 font-bold">+-- m</span>
+                            </div>
+                            <div>
+                                <span class="text-[10px] text-slate-500 uppercase block font-semibold">ETA To Station</span>
+                                <span id="route-time" class="font-mono text-slate-200 font-bold">~4 min</span>
+                            </div>
+                        </div>
+                        <button id="lock-reroute-btn" class="w-full bg-gradient-to-r from-cyan-600 to-indigo-600 text-white font-bold py-2.5 rounded-lg shadow-lg shadow-cyan-600/20 hover:from-cyan-500 hover:to-indigo-500 transition text-xs">
+                            Lock Battery & Reroute Path
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Navigation Progress Card -->
+                <div id="progress-card" class="hidden bg-slate-950/90 p-4 rounded-xl border border-slate-800 space-y-3 shadow">
+                    <div class="flex items-center justify-between">
+                        <h4 class="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center space-x-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            <span>Navigation Active</span>
+                        </h4>
+                        <span class="text-[10px] text-slate-400 font-mono" id="nav-dist-remaining">2.4 km remaining</span>
+                    </div>
+                    <p id="progress-dest" class="text-xs text-slate-300 font-medium">Traversing road network to locked station...</p>
+                    <div class="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                        <div id="progress-bar-fill" class="h-full bg-gradient-to-r from-cyan-500 to-indigo-500 transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                    <button id="simulate-event-trigger" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-bold rounded-lg transition flex items-center justify-center space-x-1.5">
+                        <span>⚡</span>
+                        <span>Trigger Mid-Route Congestion Alert</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mobile Push Notification Toast -->
+            <div id="mobile-toast" class="absolute bottom-[-220px] left-0 right-0 p-4 transition-all duration-500 z-50">
+                <div class="bg-slate-950/95 rounded-2xl shadow-2xl border-t-4 border-amber-400 p-4 ring-1 ring-slate-800 backdrop-blur">
+                    <div class="flex items-center space-x-2 mb-2">
+                        <div class="bg-amber-500/20 p-1.5 rounded-full text-amber-400 border border-amber-500/30">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        </div>
+                        <div>
+                            <span class="font-bold text-slate-100 text-xs tracking-tight block">Faster Swap Recommended!</span>
+                            <span class="text-[10px] text-amber-400 font-semibold">Inventory Event Detected</span>
+                        </div>
+                    </div>
+                    <p id="toast-desc" class="text-xs text-slate-300 mb-3.5 leading-relaxed"></p>
+                    <div class="flex space-x-2">
+                        <button id="toast-reject" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-400 py-2 rounded-lg text-xs font-bold transition">Dismiss</button>
+                        <button id="toast-accept" class="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 py-2 rounded-lg text-xs font-bold shadow-md transition">Accept Reroute</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Executive Performance Benchmark Modal -->
+    <div id="benchmark-modal" class="fixed inset-0 bg-slate-950/95 z-[2000] flex items-center justify-center hidden backdrop-blur-md">
+        <div class="bg-slate-900 border border-slate-800 w-11/12 max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="bg-slate-950 px-6 py-4 flex justify-between items-center border-b border-slate-800">
+                <div class="flex items-center space-x-3">
+                    <span class="text-2xl">📊</span>
+                    <div>
+                        <h2 class="text-lg font-bold text-white">Varanasi Case Study — Executive Benchmark Report</h2>
+                        <p class="text-xs text-slate-400">4-Hour Peak Commute (80 Commuters across Varanasi Graph Network)</p>
+                    </div>
+                </div>
+                <button id="close-modal-btn" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <div class="p-6 overflow-y-auto bg-slate-900 flex-grow space-y-6">
+                <!-- Highlight Cards -->
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="bg-slate-950 p-4 rounded-xl border border-emerald-500/30 flex flex-col items-center text-center shadow-lg">
+                        <span class="text-emerald-400 font-extrabold text-3xl font-mono mb-1" id="sim-cost-reduction">--%</span>
+                        <span class="text-slate-400 font-semibold text-xs uppercase tracking-wider">Total OPEX Savings</span>
+                    </div>
+                    <div class="bg-slate-950 p-4 rounded-xl border border-cyan-500/30 flex flex-col items-center text-center shadow-lg">
+                        <span class="text-cyan-400 font-extrabold text-3xl font-mono mb-1" id="sim-vans-saved">--</span>
+                        <span class="text-slate-400 font-semibold text-xs uppercase tracking-wider">Rebalancing Vans Eliminated</span>
+                    </div>
+                    <div class="bg-slate-950 p-4 rounded-xl border border-indigo-500/30 flex flex-col items-center text-center shadow-lg">
+                        <span class="text-indigo-400 font-extrabold text-3xl font-mono mb-1" id="sim-success-gain">+--%</span>
+                        <span class="text-slate-400 font-semibold text-xs uppercase tracking-wider">Swap Success Rate Gain</span>
+                    </div>
+                </div>
+
+                <!-- Table & Charts -->
+                <div class="grid grid-cols-2 gap-6">
+                    <!-- Table -->
+                    <div class="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden shadow">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-900 text-slate-300 border-b border-slate-800">
+                                <tr>
+                                    <th class="px-4 py-3 font-bold uppercase tracking-wider">Metric (4hr Peak)</th>
+                                    <th class="px-4 py-3 font-bold uppercase tracking-wider">Baseline (Status Quo)</th>
+                                    <th class="px-4 py-3 bg-cyan-950/40 text-cyan-400 font-bold uppercase tracking-wider">Dynamic A* Rerouting</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800/60 font-medium">
+                                <tr><td class="px-4 py-3 text-slate-300">Swap Success Rate</td><td class="px-4 py-3 text-rose-400 font-mono font-bold" id="tbl-base-succ"></td><td class="px-4 py-3 bg-cyan-950/20 font-bold text-emerald-400 font-mono" id="tbl-prop-succ"></td></tr>
+                                <tr><td class="px-4 py-3 text-slate-300">Failed Swaps</td><td class="px-4 py-3 text-rose-400 font-mono" id="tbl-base-fail"></td><td class="px-4 py-3 bg-cyan-950/20 text-slate-200 font-mono" id="tbl-prop-fail"></td></tr>
+                                <tr><td class="px-4 py-3 text-slate-300">Rebalancing Vans</td><td class="px-4 py-3 text-rose-400 font-mono" id="tbl-base-vans"></td><td class="px-4 py-3 bg-cyan-950/20 text-cyan-400 font-mono font-bold" id="tbl-prop-vans"></td></tr>
+                                <tr><td class="px-4 py-3 text-slate-300">Incentives Paid</td><td class="px-4 py-3 text-slate-400 font-mono">$0.00</td><td class="px-4 py-3 bg-cyan-950/20 text-cyan-400 font-mono" id="tbl-prop-inc"></td></tr>
+                                <tr><td class="px-4 py-3 text-slate-300">Total OPEX</td><td class="px-4 py-3 text-rose-400 font-bold font-mono" id="tbl-base-opex"></td><td class="px-4 py-3 bg-cyan-950/20 font-bold text-emerald-400 font-mono" id="tbl-prop-opex"></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Visual Comparison Bars -->
+                    <div class="bg-slate-950 rounded-xl border border-slate-800 p-4 space-y-4 shadow flex flex-col justify-center">
+                        <h3 class="font-bold text-slate-200 text-xs uppercase tracking-wider">Total OPEX Cost Comparison ($)</h3>
+                        <div class="space-y-3 text-xs">
+                            <div>
+                                <div class="flex justify-between text-[11px] mb-1"><span class="text-rose-400 font-semibold">Baseline Fleet (Vans Only)</span><span id="chart-base-opex" class="font-mono text-slate-400"></span></div>
+                                <div class="w-full bg-slate-800 rounded-full h-3.5 overflow-hidden"><div id="bar-base-opex" class="bg-rose-500 h-3.5 rounded-full" style="width: 100%"></div></div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[11px] mb-1"><span class="text-emerald-400 font-semibold">Dynamic A* (Vans + Incentives)</span><span id="chart-prop-opex" class="font-mono text-slate-400"></span></div>
+                                <div class="w-full bg-slate-800 rounded-full h-3.5 overflow-hidden"><div id="bar-prop-opex" class="bg-emerald-400 h-3.5 rounded-full transition-all duration-1000" style="width: 40%"></div></div>
+                            </div>
+                        </div>
+
+                        <div class="border-t border-slate-800 pt-3">
+                            <span class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider block mb-2">Avg Detour Added Per Rider</span>
+                            <div class="flex items-center justify-center space-x-3 bg-slate-900/80 rounded-lg p-3 border border-slate-800">
+                                <span class="text-2xl font-extrabold text-cyan-400 font-mono" id="sim-detour-mins">--</span>
+                                <span class="text-slate-400 text-xs font-semibold">mins</span>
+                                <span class="text-slate-600">|</span>
+                                <span class="text-xs text-slate-400 font-mono" id="sim-detour-meters">-- meters</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center pt-2 border-t border-slate-800">
+                    <span class="text-xs text-slate-500">Case Study: Varanasi Micro-Mobility Pilot</span>
+                    <button id="download-csv-btn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-5 rounded-lg shadow-lg transition flex items-center space-x-2 text-xs">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        <span>Export Varanasi Benchmark CSV</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/app.js"></script>
+</body>
+</html>
