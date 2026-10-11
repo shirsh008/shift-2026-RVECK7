@@ -16,7 +16,7 @@ A full-stack dashboard and routing engine designed to optimize battery-swapping 
 ## ⚙️ Local Setup Instructions
 1. Clone the repository.
 2. Install Python dependencies:
-   `pip install fastapi uvicorn networkx osmnx numpy pydantic`
+   `pip install -r requirements.txt`
 3. Start the FastAPI server:
    `uvicorn main:app --reload`
 4. Open `http://localhost:8000` in your browser.
