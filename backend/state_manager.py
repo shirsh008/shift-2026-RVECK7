@@ -33,12 +33,15 @@ def reserve_station(network_state, rider_id, station_id):
     active_reservations[rider_id] = station_id
     return True, station
 
-def release_station(network_state, rider_id, station_id):
-    if active_reservations.get(rider_id) == station_id:
-        station = get_station(network_state, station_id)
-        if station and station["Li"] > 0:
-            station["Li"] -= 1
+def release_station(network_state, rider_id, station_id=None):
+    current_reserved = active_reservations.get(rider_id)
+    target_id = station_id or current_reserved
+    if current_reserved and (station_id is None or current_reserved == station_id):
         del active_reservations[rider_id]
+    if target_id:
+        station = get_station(network_state, target_id)
+        if station and station.get("Li", 0) > 0:
+            station["Li"] -= 1
         return True
     return False
 
@@ -60,3 +63,6 @@ def swap_reservation(network_state, rider_id, old_station_id, new_station_id):
         return False, data
         
     return True, data
+
+def clear_reservations():
+    active_reservations.clear()

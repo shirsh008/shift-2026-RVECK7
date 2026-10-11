@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import List
 from mock_data import generate_network_state
 from backend.routing_engine import calculate_route
-from backend.state_manager import reserve_station, release_station, swap_reservation
+from backend.state_manager import reserve_station, release_station, swap_reservation, clear_reservations
 from backend.event_engine import simulate_inventory_event
 from backend.simulation_engine import run_simulation
 
@@ -63,6 +63,7 @@ def get_network_state():
 @app.post("/api/reset-network-state")
 def reset_network_state():
     global network_state_cache
+    clear_reservations()
     network_state_cache = generate_network_state()
     network_state_cache["metrics"] = {
         "incentive_capital_deployed": 0.0,

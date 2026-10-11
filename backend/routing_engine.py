@@ -5,8 +5,8 @@ from backend.varanasi_network import varanasi_graph, haversine_km
 v_avg = 15.0      # Average speed km/h
 d_max = 2.5       # Max 10-minute catchment radius km
 alpha = 1.0       # Distance weight
-beta = 0.5        # Wait time weight
-gamma = 2.0       # Incentive attraction weight
+beta = 0.35        # Wait time weight
+gamma = 1.25       # Incentive attraction weight
 I_max = 5.0       # Max incentive payout ($)
 epsilon = 0.001
 
