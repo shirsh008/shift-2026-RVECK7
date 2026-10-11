@@ -1,4 +1,10 @@
-fastapi
-uvicorn
-networkx
+fastapi 
+uvicorn[standard] 
+osmnx 
+networkx 
+geopandas 
+scipy 
+pandas 
+numpy 
+matplotlib 
 pydantic
